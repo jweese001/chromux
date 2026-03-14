@@ -5796,11 +5796,48 @@ struct GhosttyScrollbar {
     let offset: UInt64
     let len: UInt64
 
+    init(total: Int, offset: Int, len: Int) {
+        self.total = UInt64(max(0, total))
+        self.offset = UInt64(max(0, offset))
+        self.len = UInt64(max(0, len))
+    }
+
     init(c: ghostty_action_scrollbar_s) {
         total = c.total
         offset = c.offset
         len = c.len
     }
+
+    var totalRows: Int { Int(min(total, UInt64(Int.max))) }
+    var offsetRows: Int { Int(min(offset, UInt64(Int.max))) }
+    var visibleRows: Int { Int(min(len, UInt64(Int.max))) }
+    var maxTopVisibleRow: Int { max(0, totalRows - visibleRows) }
+    var incomingTopVisibleRow: Int {
+        max(0, min(maxTopVisibleRow, maxTopVisibleRow - offsetRows))
+    }
+}
+
+struct GhosttyScrollViewportSyncPlan: Equatable {
+    let targetTopVisibleRow: Int
+    let targetRowFromBottom: Int
+    let storedTopVisibleRow: Int?
+}
+
+func ghosttyScrollViewportSyncPlan(
+    scrollbar: GhosttyScrollbar,
+    storedTopVisibleRow: Int?,
+    isExplicitViewportChange: Bool
+) -> GhosttyScrollViewportSyncPlan {
+    _ = storedTopVisibleRow
+    _ = isExplicitViewportChange
+
+    let targetTopVisibleRow = scrollbar.incomingTopVisibleRow
+    let targetRowFromBottom = max(0, scrollbar.maxTopVisibleRow - targetTopVisibleRow)
+    return GhosttyScrollViewportSyncPlan(
+        targetTopVisibleRow: targetTopVisibleRow,
+        targetRowFromBottom: targetRowFromBottom,
+        storedTopVisibleRow: targetRowFromBottom > 0 ? targetTopVisibleRow : nil
+    )
 }
 
 enum GhosttyNotificationKey {
