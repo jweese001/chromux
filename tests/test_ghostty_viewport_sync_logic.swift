@@ -44,6 +44,30 @@ func testScrollWheelStartsExplicitViewportChange() {
     )
 }
 
+func testExplicitViewportChangeIsConsumedByFirstScrollbarUpdate() {
+    let first = ghosttyConsumeExplicitViewportChange(
+        pendingExplicitViewportChange: true
+    )
+
+    expect(
+        first.isExplicitViewportChange,
+        "the first scrollbar update after a user scroll should be explicit"
+    )
+    expect(
+        first.remainingPendingExplicitViewportChange == false,
+        "the explicit viewport change token should be consumed by that update"
+    )
+
+    let second = ghosttyConsumeExplicitViewportChange(
+        pendingExplicitViewportChange: first.remainingPendingExplicitViewportChange
+    )
+
+    expect(
+        second.isExplicitViewportChange == false,
+        "later output updates should not still count as the original explicit scroll"
+    )
+}
+
 func testFailedScrollCorrectionDispatchDoesNotBlockRetry() {
     let failed = ghosttyScrollCorrectionDispatchState(
         previousLastSentRow: 4,
@@ -78,6 +102,7 @@ struct GhosttyViewportSyncLogicTestRunner {
         testPreservesStoredTopVisibleRowWhenNewOutputArrives()
         testInternalScrollCorrectionDoesNotCountAsExplicitViewportChange()
         testScrollWheelStartsExplicitViewportChange()
+        testExplicitViewportChangeIsConsumedByFirstScrollbarUpdate()
         testFailedScrollCorrectionDispatchDoesNotBlockRetry()
         print("PASS: ghostty viewport sync logic")
     }

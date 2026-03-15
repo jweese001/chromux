@@ -62,6 +62,21 @@ final class GhosttyScrollbarSyncPlanTests: XCTestCase {
         XCTAssertTrue(ghosttyShouldBeginExplicitViewportChange(for: .scrollWheel))
     }
 
+    func testExplicitViewportChangeIsConsumedByFirstScrollbarUpdate() {
+        let first = ghosttyConsumeExplicitViewportChange(
+            pendingExplicitViewportChange: true
+        )
+
+        XCTAssertTrue(first.isExplicitViewportChange)
+        XCTAssertFalse(first.remainingPendingExplicitViewportChange)
+
+        let second = ghosttyConsumeExplicitViewportChange(
+            pendingExplicitViewportChange: first.remainingPendingExplicitViewportChange
+        )
+
+        XCTAssertFalse(second.isExplicitViewportChange)
+    }
+
     func testFailedScrollCorrectionDispatchKeepsRetryStateClear() {
         let failed = ghosttyScrollCorrectionDispatchState(
             previousLastSentRow: 4,
