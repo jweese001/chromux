@@ -5987,6 +5987,7 @@ final class GhosttySurfaceScrollView: NSView {
     private var isLiveScrolling = false
     private var lastSentRow: Int?
     private var pendingExplicitViewportChange = false
+    private var pendingExplicitViewportChangeBaseline: GhosttyScrollbar?
     private var pendingAnchorCorrectionRow: Int?
     private var isActive = true
     private var lastFocusRefreshAt: CFTimeInterval = 0
@@ -8201,6 +8202,7 @@ final class GhosttySurfaceScrollView: NSView {
 
     fileprivate func markExplicitViewportChange() {
         pendingExplicitViewportChange = true
+        pendingExplicitViewportChangeBaseline = surfaceView.scrollbar
         pendingAnchorCorrectionRow = nil
     }
 
@@ -8263,9 +8265,14 @@ final class GhosttySurfaceScrollView: NSView {
         )
         let storedTopVisibleRowBefore = surfaceView.terminalSurface?.storedScrollViewportAnchorTopVisibleRow()
         let explicitViewportChange = ghosttyConsumeExplicitViewportChange(
-            pendingExplicitViewportChange: pendingExplicitViewportChange
+            pendingExplicitViewportChange: pendingExplicitViewportChange,
+            baselineScrollbar: pendingExplicitViewportChangeBaseline,
+            incomingScrollbar: scrollbar
         )
         pendingExplicitViewportChange = explicitViewportChange.remainingPendingExplicitViewportChange
+        if !pendingExplicitViewportChange {
+            pendingExplicitViewportChangeBaseline = nil
+        }
         let isExplicitViewportChange = isLiveScrolling || explicitViewportChange.isExplicitViewportChange
         let currentViewportRows = currentViewportRows()
         let resolvedStoredTopVisibleRow = ghosttyResolvedStoredTopVisibleRow(

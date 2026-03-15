@@ -1,4 +1,4 @@
-struct GhosttyScrollbar {
+struct GhosttyScrollbar: Equatable {
     let total: UInt64
     let offset: UInt64
     let len: UInt64
@@ -135,10 +135,36 @@ func ghosttyShouldBeginExplicitViewportChange(
 }
 
 func ghosttyConsumeExplicitViewportChange(
-    pendingExplicitViewportChange: Bool
+    pendingExplicitViewportChange: Bool,
+    baselineScrollbar: GhosttyScrollbar?,
+    incomingScrollbar: GhosttyScrollbar
 ) -> GhosttyExplicitViewportChangeConsumption {
-    GhosttyExplicitViewportChangeConsumption(
-        isExplicitViewportChange: pendingExplicitViewportChange,
+    guard pendingExplicitViewportChange else {
+        return GhosttyExplicitViewportChangeConsumption(
+            isExplicitViewportChange: false,
+            remainingPendingExplicitViewportChange: false
+        )
+    }
+    guard let baselineScrollbar else {
+        return GhosttyExplicitViewportChangeConsumption(
+            isExplicitViewportChange: true,
+            remainingPendingExplicitViewportChange: false
+        )
+    }
+    if incomingScrollbar.incomingTopVisibleRow != baselineScrollbar.incomingTopVisibleRow {
+        return GhosttyExplicitViewportChangeConsumption(
+            isExplicitViewportChange: true,
+            remainingPendingExplicitViewportChange: false
+        )
+    }
+    if incomingScrollbar == baselineScrollbar {
+        return GhosttyExplicitViewportChangeConsumption(
+            isExplicitViewportChange: false,
+            remainingPendingExplicitViewportChange: true
+        )
+    }
+    return GhosttyExplicitViewportChangeConsumption(
+        isExplicitViewportChange: false,
         remainingPendingExplicitViewportChange: false
     )
 }
