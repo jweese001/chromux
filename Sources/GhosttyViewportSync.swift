@@ -34,6 +34,12 @@ enum GhosttyViewportInteraction {
     case bindingAction(action: String, source: GhosttyViewportChangeSource)
 }
 
+enum GhosttyTerminalFocusRequestSource {
+    case automaticFirstResponderRestore
+    case automaticEnsureFocus
+    case explicitUserAction
+}
+
 struct GhosttyScrollCorrectionDispatchState: Equatable {
     let lastSentRow: Int?
     let pendingAnchorCorrectionRow: Int?
@@ -102,8 +108,23 @@ func ghosttyConsumeExplicitViewportChange(
     )
 }
 
+func ghosttyShouldAutomaticallyReassertTerminalFocus(
+    storedTopVisibleRow: Int?,
+    focusRequestSource: GhosttyTerminalFocusRequestSource
+) -> Bool {
+    switch focusRequestSource {
+    case .automaticFirstResponderRestore, .automaticEnsureFocus:
+        return storedTopVisibleRow == nil
+    case .explicitUserAction:
+        return true
+    }
+}
+
 func ghosttyShouldRestoreAutomaticTerminalFocus(storedTopVisibleRow: Int?) -> Bool {
-    storedTopVisibleRow == nil
+    ghosttyShouldAutomaticallyReassertTerminalFocus(
+        storedTopVisibleRow: storedTopVisibleRow,
+        focusRequestSource: .automaticFirstResponderRestore
+    )
 }
 
 func ghosttyScrollCorrectionDispatchState(
