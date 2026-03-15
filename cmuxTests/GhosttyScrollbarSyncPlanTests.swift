@@ -77,6 +77,11 @@ final class GhosttyScrollbarSyncPlanTests: XCTestCase {
         XCTAssertFalse(second.isExplicitViewportChange)
     }
 
+    func testAutomaticFocusRestoreIsSuppressedWhileReviewingScrollback() {
+        XCTAssertFalse(ghosttyShouldRestoreAutomaticTerminalFocus(storedTopVisibleRow: 70))
+        XCTAssertTrue(ghosttyShouldRestoreAutomaticTerminalFocus(storedTopVisibleRow: nil))
+    }
+
     func testFailedScrollCorrectionDispatchKeepsRetryStateClear() {
         let failed = ghosttyScrollCorrectionDispatchState(
             previousLastSentRow: 4,
