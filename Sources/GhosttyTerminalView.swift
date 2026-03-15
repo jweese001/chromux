@@ -3408,9 +3408,12 @@ final class TerminalSurface: Identifiable, ObservableObject {
         #endif
     }
 
-    func performBindingAction(_ action: String) -> Bool {
+    func performBindingAction(
+        _ action: String,
+        viewportChangeSource: GhosttyViewportChangeSource = .userInteraction
+    ) -> Bool {
         guard let surface = surface else { return false }
-        if ghosttyBindingActionMutatesViewport(action) {
+        if ghosttyShouldMarkExplicitViewportChange(action: action, source: viewportChangeSource) {
             hostedView.markExplicitViewportChange()
         }
         return action.withCString { cString in
@@ -4115,9 +4118,12 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         return surface
     }
 
-    func performBindingAction(_ action: String) -> Bool {
+    func performBindingAction(
+        _ action: String,
+        viewportChangeSource: GhosttyViewportChangeSource = .userInteraction
+    ) -> Bool {
         guard let surface = surface else { return false }
-        if ghosttyBindingActionMutatesViewport(action) {
+        if ghosttyShouldMarkExplicitViewportChange(action: action, source: viewportChangeSource) {
             terminalSurface?.hostedView.markExplicitViewportChange()
         }
         return action.withCString { cString in
@@ -5806,57 +5812,12 @@ private extension NSScreen {
     }
 }
 
-struct GhosttyScrollbar {
-    let total: UInt64
-    let offset: UInt64
-    let len: UInt64
-
-    init(total: Int, offset: Int, len: Int) {
-        self.total = UInt64(max(0, total))
-        self.offset = UInt64(max(0, offset))
-        self.len = UInt64(max(0, len))
-    }
-
+extension GhosttyScrollbar {
     init(c: ghostty_action_scrollbar_s) {
         total = c.total
         offset = c.offset
         len = c.len
     }
-
-    var totalRows: Int { Int(min(total, UInt64(Int.max))) }
-    var offsetRows: Int { Int(min(offset, UInt64(Int.max))) }
-    var visibleRows: Int { Int(min(len, UInt64(Int.max))) }
-    var maxTopVisibleRow: Int { max(0, totalRows - visibleRows) }
-    var incomingTopVisibleRow: Int {
-        max(0, min(maxTopVisibleRow, maxTopVisibleRow - offsetRows))
-    }
-}
-
-struct GhosttyScrollViewportSyncPlan: Equatable {
-    let targetTopVisibleRow: Int
-    let targetRowFromBottom: Int
-    let storedTopVisibleRow: Int?
-}
-
-func ghosttyScrollViewportSyncPlan(
-    scrollbar: GhosttyScrollbar,
-    storedTopVisibleRow: Int?,
-    isExplicitViewportChange: Bool
-) -> GhosttyScrollViewportSyncPlan {
-    let targetTopVisibleRow: Int
-    if isExplicitViewportChange {
-        targetTopVisibleRow = scrollbar.incomingTopVisibleRow
-    } else if let storedTopVisibleRow {
-        targetTopVisibleRow = max(0, min(storedTopVisibleRow, scrollbar.maxTopVisibleRow))
-    } else {
-        targetTopVisibleRow = scrollbar.incomingTopVisibleRow
-    }
-    let targetRowFromBottom = max(0, scrollbar.maxTopVisibleRow - targetTopVisibleRow)
-    return GhosttyScrollViewportSyncPlan(
-        targetTopVisibleRow: targetTopVisibleRow,
-        targetRowFromBottom: targetRowFromBottom,
-        storedTopVisibleRow: targetRowFromBottom > 0 ? targetTopVisibleRow : nil
-    )
 }
 
 enum GhosttyNotificationKey {
@@ -5921,15 +5882,6 @@ private final class GhosttyPassthroughVisualEffectView: NSVisualEffectView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
     }
-}
-
-private func ghosttyBindingActionMutatesViewport(_ action: String) -> Bool {
-    action.hasPrefix("scroll_") ||
-        action.hasPrefix("jump_to_prompt:") ||
-        action == "search:next" ||
-        action == "search:previous" ||
-        action == "navigate_search:next" ||
-        action == "navigate_search:previous"
 }
 
 func shouldAllowEnsureFocusWindowActivation(
@@ -8159,9 +8111,18 @@ final class GhosttySurfaceScrollView: NSView {
             return
         }
         guard pendingAnchorCorrectionRow != syncPlan.targetRowFromBottom else { return }
-        lastSentRow = syncPlan.targetRowFromBottom
-        _ = surfaceView.performBindingAction("scroll_to_row:\(syncPlan.targetRowFromBottom)")
-        pendingAnchorCorrectionRow = syncPlan.targetRowFromBottom
+        let didDispatch = surfaceView.performBindingAction(
+            "scroll_to_row:\(syncPlan.targetRowFromBottom)",
+            viewportChangeSource: .internalCorrection
+        )
+        let correctionState = ghosttyScrollCorrectionDispatchState(
+            previousLastSentRow: lastSentRow,
+            previousPendingAnchorCorrectionRow: pendingAnchorCorrectionRow,
+            targetRowFromBottom: syncPlan.targetRowFromBottom,
+            dispatchSucceeded: didDispatch
+        )
+        lastSentRow = correctionState.lastSentRow
+        pendingAnchorCorrectionRow = correctionState.pendingAnchorCorrectionRow
     }
 
     private func documentHeight() -> CGFloat {
