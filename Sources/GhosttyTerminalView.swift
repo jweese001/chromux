@@ -4477,6 +4477,31 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     override var acceptsFirstResponder: Bool { true }
 
+    private func firstResponderAcquisitionSource() -> GhosttyFirstResponderAcquisitionSource {
+        guard let window, let event = NSApp.currentEvent else {
+            return .automaticWindowActivation
+        }
+
+        if event.windowNumber != 0, event.windowNumber != window.windowNumber {
+            return .automaticWindowActivation
+        }
+        if let eventWindow = event.window, eventWindow !== window {
+            return .automaticWindowActivation
+        }
+
+        switch event.type {
+        case .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
+             .otherMouseDown, .otherMouseUp, .scrollWheel, .gesture,
+             .magnify, .rotate, .swipe:
+            let point = convert(event.locationInWindow, from: nil)
+            return bounds.contains(point) ? .directSurfaceInteraction : .automaticWindowActivation
+        case .keyDown, .keyUp:
+            return .directSurfaceInteraction
+        default:
+            return .automaticWindowActivation
+        }
+    }
+
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
         var shouldApplySurfaceFocus = false
@@ -4500,9 +4525,24 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             // allowed a mismatch where AppKit focus moved but the UI focus indicator (bonsplit)
             // stayed behind.
             let hiddenInHierarchy = isHiddenOrHasHiddenAncestor
+            let storedTopVisibleRow = terminalSurface?.storedScrollViewportAnchorTopVisibleRow()
+            let acquisitionSource = firstResponderAcquisitionSource()
             if isVisibleInUI && hasUsableFocusGeometry && !hiddenInHierarchy {
-                shouldApplySurfaceFocus = true
-                onFocus?()
+                if ghosttyShouldApplyTerminalSurfaceFocusOnFirstResponderAcquisition(
+                    storedTopVisibleRow: storedTopVisibleRow,
+                    acquisitionSource: acquisitionSource
+                ) {
+                    shouldApplySurfaceFocus = true
+                    onFocus?()
+                } else {
+#if DEBUG
+                    dlog(
+                        "focus.firstResponder SUPPRESSED (reviewing_scrollback) " +
+                        "surface=\(terminalSurface?.id.uuidString.prefix(5) ?? "nil") " +
+                        "source=\(acquisitionSource == .automaticWindowActivation ? "automatic" : "direct")"
+                    )
+#endif
+                }
             } else if isVisibleInUI && (!hasUsableFocusGeometry || hiddenInHierarchy) {
 #if DEBUG
                 dlog(

@@ -40,6 +40,11 @@ enum GhosttyTerminalFocusRequestSource {
     case explicitUserAction
 }
 
+enum GhosttyFirstResponderAcquisitionSource {
+    case automaticWindowActivation
+    case directSurfaceInteraction
+}
+
 struct GhosttyScrollCorrectionDispatchState: Equatable {
     let lastSentRow: Int?
     let pendingAnchorCorrectionRow: Int?
@@ -125,6 +130,18 @@ func ghosttyShouldRestoreAutomaticTerminalFocus(storedTopVisibleRow: Int?) -> Bo
         storedTopVisibleRow: storedTopVisibleRow,
         focusRequestSource: .automaticFirstResponderRestore
     )
+}
+
+func ghosttyShouldApplyTerminalSurfaceFocusOnFirstResponderAcquisition(
+    storedTopVisibleRow: Int?,
+    acquisitionSource: GhosttyFirstResponderAcquisitionSource
+) -> Bool {
+    switch acquisitionSource {
+    case .automaticWindowActivation:
+        return storedTopVisibleRow == nil
+    case .directSurfaceInteraction:
+        return true
+    }
 }
 
 func ghosttyScrollCorrectionDispatchState(
