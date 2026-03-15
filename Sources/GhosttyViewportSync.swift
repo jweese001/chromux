@@ -55,24 +55,54 @@ struct GhosttyExplicitViewportChangeConsumption: Equatable {
     let remainingPendingExplicitViewportChange: Bool
 }
 
+struct GhosttyExplicitFocusRestoreConsumption: Equatable {
+    let focusRequestSource: GhosttyTerminalFocusRequestSource
+    let remainingPendingExplicitFocusRestoreAfterKeyLoss: Bool
+    let remainingHasLostKeySinceExplicitFocusRestoreRequest: Bool
+}
+
+struct GhosttyAutomaticTerminalFocusRestorePlan: Equatable {
+    let shouldRestoreFirstResponder: Bool
+    let shouldReassertTerminalSurfaceFocus: Bool
+}
+
 func ghosttyScrollViewportSyncPlan(
     scrollbar: GhosttyScrollbar,
     storedTopVisibleRow: Int?,
     isExplicitViewportChange: Bool
 ) -> GhosttyScrollViewportSyncPlan {
+    guard scrollbar.visibleRows > 0 else {
+        return GhosttyScrollViewportSyncPlan(
+            targetTopVisibleRow: 0,
+            targetRowFromBottom: 0,
+            storedTopVisibleRow: nil
+        )
+    }
+
+    let clampedStoredTopVisibleRow = storedTopVisibleRow.map {
+        max(0, min($0, scrollbar.maxTopVisibleRow))
+    }
     let targetTopVisibleRow: Int
     if isExplicitViewportChange {
         targetTopVisibleRow = scrollbar.incomingTopVisibleRow
-    } else if let storedTopVisibleRow {
-        targetTopVisibleRow = max(0, min(storedTopVisibleRow, scrollbar.maxTopVisibleRow))
+    } else if let clampedStoredTopVisibleRow {
+        targetTopVisibleRow = clampedStoredTopVisibleRow
     } else {
         targetTopVisibleRow = scrollbar.incomingTopVisibleRow
     }
     let targetRowFromBottom = max(0, scrollbar.maxTopVisibleRow - targetTopVisibleRow)
+    let resultingStoredTopVisibleRow: Int?
+    if isExplicitViewportChange {
+        resultingStoredTopVisibleRow = targetRowFromBottom > 0 ? targetTopVisibleRow : nil
+    } else if let clampedStoredTopVisibleRow {
+        resultingStoredTopVisibleRow = clampedStoredTopVisibleRow
+    } else {
+        resultingStoredTopVisibleRow = targetRowFromBottom > 0 ? targetTopVisibleRow : nil
+    }
     return GhosttyScrollViewportSyncPlan(
         targetTopVisibleRow: targetTopVisibleRow,
         targetRowFromBottom: targetRowFromBottom,
-        storedTopVisibleRow: targetRowFromBottom > 0 ? targetTopVisibleRow : nil
+        storedTopVisibleRow: resultingStoredTopVisibleRow
     )
 }
 
@@ -113,16 +143,127 @@ func ghosttyConsumeExplicitViewportChange(
     )
 }
 
+func ghosttyConsumeExplicitFocusRestoreAfterKeyLoss(
+    pendingExplicitFocusRestoreAfterKeyLoss: Bool,
+    hasLostKeySinceExplicitFocusRestoreRequest: Bool,
+    baseFocusRequestSource: GhosttyTerminalFocusRequestSource
+) -> GhosttyExplicitFocusRestoreConsumption {
+    guard pendingExplicitFocusRestoreAfterKeyLoss else {
+        return GhosttyExplicitFocusRestoreConsumption(
+            focusRequestSource: baseFocusRequestSource,
+            remainingPendingExplicitFocusRestoreAfterKeyLoss: false,
+            remainingHasLostKeySinceExplicitFocusRestoreRequest: false
+        )
+    }
+    guard hasLostKeySinceExplicitFocusRestoreRequest else {
+        return GhosttyExplicitFocusRestoreConsumption(
+            focusRequestSource: baseFocusRequestSource,
+            remainingPendingExplicitFocusRestoreAfterKeyLoss: true,
+            remainingHasLostKeySinceExplicitFocusRestoreRequest: false
+        )
+    }
+
+    return GhosttyExplicitFocusRestoreConsumption(
+        focusRequestSource: .explicitUserAction,
+        remainingPendingExplicitFocusRestoreAfterKeyLoss: false,
+        remainingHasLostKeySinceExplicitFocusRestoreRequest: false
+    )
+}
+
+func ghosttyResolvedStoredTopVisibleRow(
+    storedTopVisibleRow: Int?,
+    currentViewportTopVisibleRow: Int?,
+    currentViewportRowFromBottom: Int?,
+    isExplicitViewportChange: Bool,
+    hasPendingAnchorCorrection: Bool
+) -> Int? {
+    guard !isExplicitViewportChange, !hasPendingAnchorCorrection else {
+        return storedTopVisibleRow
+    }
+    guard storedTopVisibleRow == nil else {
+        return storedTopVisibleRow
+    }
+    guard let currentViewportTopVisibleRow,
+          let currentViewportRowFromBottom,
+          currentViewportTopVisibleRow > 0 || currentViewportRowFromBottom > 0 else {
+        return storedTopVisibleRow
+    }
+    return currentViewportTopVisibleRow
+}
+
+func ghosttyPassiveScrollViewportSyncPlan(
+    scrollbar: GhosttyScrollbar,
+    storedTopVisibleRow: Int?,
+    currentViewportTopVisibleRow: Int?,
+    currentViewportRowFromBottom: Int?,
+    hasPendingAnchorCorrection: Bool
+) -> GhosttyScrollViewportSyncPlan {
+    let resolvedStoredTopVisibleRow = ghosttyResolvedStoredTopVisibleRow(
+        storedTopVisibleRow: storedTopVisibleRow,
+        currentViewportTopVisibleRow: currentViewportTopVisibleRow,
+        currentViewportRowFromBottom: currentViewportRowFromBottom,
+        isExplicitViewportChange: false,
+        hasPendingAnchorCorrection: hasPendingAnchorCorrection
+    )
+    return ghosttyScrollViewportSyncPlan(
+        scrollbar: scrollbar,
+        storedTopVisibleRow: resolvedStoredTopVisibleRow,
+        isExplicitViewportChange: false
+    )
+}
+
+func ghosttyBaselineScrollbarForIncomingUpdate(
+    lastAcceptedScrollbar: GhosttyScrollbar?,
+    currentSurfaceScrollbar: GhosttyScrollbar?
+) -> GhosttyScrollbar? {
+    lastAcceptedScrollbar ?? currentSurfaceScrollbar
+}
+
+func ghosttyShouldIgnoreStalePassiveScrollbarUpdate(
+    previousScrollbar: GhosttyScrollbar?,
+    incomingScrollbar: GhosttyScrollbar,
+    resolvedStoredTopVisibleRow: Int?,
+    resultingStoredTopVisibleRow: Int?,
+    isExplicitViewportChange: Bool
+) -> Bool {
+    guard !isExplicitViewportChange else {
+        return false
+    }
+    guard let previousScrollbar else {
+        return false
+    }
+    guard incomingScrollbar.totalRows < previousScrollbar.totalRows else {
+        return false
+    }
+    return resolvedStoredTopVisibleRow != nil || resultingStoredTopVisibleRow == nil
+}
+
+func ghosttyAutomaticTerminalFocusRestorePlan(
+    storedTopVisibleRow: Int?,
+    focusRequestSource: GhosttyTerminalFocusRequestSource
+) -> GhosttyAutomaticTerminalFocusRestorePlan {
+    switch focusRequestSource {
+    case .automaticFirstResponderRestore, .automaticEnsureFocus:
+        return GhosttyAutomaticTerminalFocusRestorePlan(
+            shouldRestoreFirstResponder: true,
+            shouldReassertTerminalSurfaceFocus: storedTopVisibleRow == nil
+        )
+    case .explicitUserAction:
+        return GhosttyAutomaticTerminalFocusRestorePlan(
+            shouldRestoreFirstResponder: true,
+            shouldReassertTerminalSurfaceFocus: true
+        )
+    }
+}
+
 func ghosttyShouldAutomaticallyReassertTerminalFocus(
     storedTopVisibleRow: Int?,
     focusRequestSource: GhosttyTerminalFocusRequestSource
 ) -> Bool {
-    switch focusRequestSource {
-    case .automaticFirstResponderRestore, .automaticEnsureFocus:
-        return storedTopVisibleRow == nil
-    case .explicitUserAction:
-        return true
-    }
+    ghosttyAutomaticTerminalFocusRestorePlan(
+        storedTopVisibleRow: storedTopVisibleRow,
+        focusRequestSource: focusRequestSource
+    ).shouldReassertTerminalSurfaceFocus
 }
 
 func ghosttyShouldRestoreAutomaticTerminalFocus(storedTopVisibleRow: Int?) -> Bool {

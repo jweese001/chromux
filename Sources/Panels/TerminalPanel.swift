@@ -182,8 +182,11 @@ final class TerminalPanel: Panel, ObservableObject {
         surface.sendText(text)
     }
 
-    func performBindingAction(_ action: String) -> Bool {
-        surface.performBindingAction(action)
+    func performBindingAction(
+        _ action: String,
+        viewportChangeSource: GhosttyViewportChangeSource
+    ) -> Bool {
+        surface.performBindingAction(action, viewportChangeSource: viewportChangeSource)
     }
 
     func hasSelection() -> Bool {
