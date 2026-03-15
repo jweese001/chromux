@@ -79,6 +79,23 @@ func testAutomaticFocusRestoreIsSuppressedWhileReviewingScrollback() {
     )
 }
 
+func testAutomaticEnsureFocusIsAlsoSuppressedWhileReviewingScrollback() {
+    expect(
+        ghosttyShouldAutomaticallyReassertTerminalFocus(
+            storedTopVisibleRow: 70,
+            focusRequestSource: .automaticEnsureFocus
+        ) == false,
+        "automatic ensureFocus should not re-focus the terminal while reviewing scrollback"
+    )
+    expect(
+        ghosttyShouldAutomaticallyReassertTerminalFocus(
+            storedTopVisibleRow: 70,
+            focusRequestSource: .explicitUserAction
+        ),
+        "explicit user focus should still be allowed while reviewing scrollback"
+    )
+}
+
 func testFailedScrollCorrectionDispatchDoesNotBlockRetry() {
     let failed = ghosttyScrollCorrectionDispatchState(
         previousLastSentRow: 4,
@@ -115,6 +132,7 @@ struct GhosttyViewportSyncLogicTestRunner {
         testScrollWheelStartsExplicitViewportChange()
         testExplicitViewportChangeIsConsumedByFirstScrollbarUpdate()
         testAutomaticFocusRestoreIsSuppressedWhileReviewingScrollback()
+        testAutomaticEnsureFocusIsAlsoSuppressedWhileReviewingScrollback()
         testFailedScrollCorrectionDispatchDoesNotBlockRetry()
         print("PASS: ghostty viewport sync logic")
     }
