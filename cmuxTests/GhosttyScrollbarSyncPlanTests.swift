@@ -42,4 +42,41 @@ final class GhosttyScrollbarSyncPlanTests: XCTestCase {
         XCTAssertEqual(plan.targetRowFromBottom, 0)
         XCTAssertNil(plan.storedTopVisibleRow)
     }
+
+    func testInternalScrollCorrectionDoesNotMarkExplicitViewportChange() {
+        XCTAssertFalse(
+            ghosttyShouldMarkExplicitViewportChange(
+                action: "scroll_to_row:15",
+                source: .internalCorrection
+            )
+        )
+        XCTAssertTrue(
+            ghosttyShouldMarkExplicitViewportChange(
+                action: "scroll_to_row:15",
+                source: .userInteraction
+            )
+        )
+    }
+
+    func testFailedScrollCorrectionDispatchKeepsRetryStateClear() {
+        let failed = ghosttyScrollCorrectionDispatchState(
+            previousLastSentRow: 4,
+            previousPendingAnchorCorrectionRow: nil,
+            targetRowFromBottom: 15,
+            dispatchSucceeded: false
+        )
+
+        XCTAssertEqual(failed.lastSentRow, 4)
+        XCTAssertNil(failed.pendingAnchorCorrectionRow)
+
+        let succeeded = ghosttyScrollCorrectionDispatchState(
+            previousLastSentRow: 4,
+            previousPendingAnchorCorrectionRow: nil,
+            targetRowFromBottom: 15,
+            dispatchSucceeded: true
+        )
+
+        XCTAssertEqual(succeeded.lastSentRow, 15)
+        XCTAssertEqual(succeeded.pendingAnchorCorrectionRow, 15)
+    }
 }
