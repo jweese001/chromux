@@ -46,7 +46,9 @@ func testScrollWheelStartsExplicitViewportChange() {
 
 func testExplicitViewportChangeIsConsumedByFirstScrollbarUpdate() {
     let first = ghosttyConsumeExplicitViewportChange(
-        pendingExplicitViewportChange: true
+        pendingExplicitViewportChange: true,
+        baselineScrollbar: nil,
+        incomingScrollbar: GhosttyScrollbar(total: 100, offset: 15, len: 20)
     )
 
     expect(
@@ -59,12 +61,63 @@ func testExplicitViewportChangeIsConsumedByFirstScrollbarUpdate() {
     )
 
     let second = ghosttyConsumeExplicitViewportChange(
-        pendingExplicitViewportChange: first.remainingPendingExplicitViewportChange
+        pendingExplicitViewportChange: first.remainingPendingExplicitViewportChange,
+        baselineScrollbar: nil,
+        incomingScrollbar: GhosttyScrollbar(total: 105, offset: 15, len: 20)
     )
 
     expect(
         second.isExplicitViewportChange == false,
         "later output updates should not still count as the original explicit scroll"
+    )
+}
+
+func testPendingExplicitViewportChangeDoesNotLeakIntoOutputOnlyUpdate() {
+    let deferred = ghosttyConsumeExplicitViewportChange(
+        pendingExplicitViewportChange: true,
+        baselineScrollbar: GhosttyScrollbar(total: 100, offset: 10, len: 20),
+        incomingScrollbar: GhosttyScrollbar(total: 100, offset: 10, len: 20)
+    )
+
+    expect(
+        deferred.isExplicitViewportChange == false,
+        "an unchanged scrollbar snapshot should not be treated as an explicit viewport change yet"
+    )
+    expect(
+        deferred.remainingPendingExplicitViewportChange,
+        "the explicit viewport change token should stay armed until something actually moves"
+    )
+
+    let leaked = ghosttyConsumeExplicitViewportChange(
+        pendingExplicitViewportChange: deferred.remainingPendingExplicitViewportChange,
+        baselineScrollbar: GhosttyScrollbar(total: 100, offset: 10, len: 20),
+        incomingScrollbar: GhosttyScrollbar(total: 105, offset: 15, len: 20)
+    )
+
+    expect(
+        leaked.isExplicitViewportChange == false,
+        "output-only growth at the same anchored top row should not consume the explicit viewport change token as user scroll"
+    )
+    expect(
+        leaked.remainingPendingExplicitViewportChange == false,
+        "once a passive output update arrives without a viewport move, the stale explicit token should be cleared"
+    )
+}
+
+func testPendingExplicitViewportChangeConsumesWhenViewportActuallyMoves() {
+    let moved = ghosttyConsumeExplicitViewportChange(
+        pendingExplicitViewportChange: true,
+        baselineScrollbar: GhosttyScrollbar(total: 100, offset: 10, len: 20),
+        incomingScrollbar: GhosttyScrollbar(total: 100, offset: 15, len: 20)
+    )
+
+    expect(
+        moved.isExplicitViewportChange,
+        "a pending explicit viewport change should be consumed once the viewport top row actually changes"
+    )
+    expect(
+        moved.remainingPendingExplicitViewportChange == false,
+        "the explicit viewport change token should clear after that viewport move"
     )
 }
 
@@ -378,6 +431,8 @@ struct GhosttyViewportSyncLogicTestRunner {
         testInternalScrollCorrectionDoesNotCountAsExplicitViewportChange()
         testScrollWheelStartsExplicitViewportChange()
         testExplicitViewportChangeIsConsumedByFirstScrollbarUpdate()
+        testPendingExplicitViewportChangeDoesNotLeakIntoOutputOnlyUpdate()
+        testPendingExplicitViewportChangeConsumesWhenViewportActuallyMoves()
         testAutomaticFocusRestoreIsSuppressedWhileReviewingScrollback()
         testAutomaticEnsureFocusIsAlsoSuppressedWhileReviewingScrollback()
         testAutomaticFirstResponderAcquisitionIsSuppressedWhileReviewingScrollback()

@@ -64,17 +64,52 @@ final class GhosttyScrollbarSyncPlanTests: XCTestCase {
 
     func testExplicitViewportChangeIsConsumedByFirstScrollbarUpdate() {
         let first = ghosttyConsumeExplicitViewportChange(
-            pendingExplicitViewportChange: true
+            pendingExplicitViewportChange: true,
+            baselineScrollbar: nil,
+            incomingScrollbar: GhosttyScrollbar(total: 100, offset: 15, len: 20)
         )
 
         XCTAssertTrue(first.isExplicitViewportChange)
         XCTAssertFalse(first.remainingPendingExplicitViewportChange)
 
         let second = ghosttyConsumeExplicitViewportChange(
-            pendingExplicitViewportChange: first.remainingPendingExplicitViewportChange
+            pendingExplicitViewportChange: first.remainingPendingExplicitViewportChange,
+            baselineScrollbar: nil,
+            incomingScrollbar: GhosttyScrollbar(total: 105, offset: 15, len: 20)
         )
 
         XCTAssertFalse(second.isExplicitViewportChange)
+    }
+
+    func testPendingExplicitViewportChangeDoesNotLeakIntoOutputOnlyUpdate() {
+        let deferred = ghosttyConsumeExplicitViewportChange(
+            pendingExplicitViewportChange: true,
+            baselineScrollbar: GhosttyScrollbar(total: 100, offset: 10, len: 20),
+            incomingScrollbar: GhosttyScrollbar(total: 100, offset: 10, len: 20)
+        )
+
+        XCTAssertFalse(deferred.isExplicitViewportChange)
+        XCTAssertTrue(deferred.remainingPendingExplicitViewportChange)
+
+        let leaked = ghosttyConsumeExplicitViewportChange(
+            pendingExplicitViewportChange: deferred.remainingPendingExplicitViewportChange,
+            baselineScrollbar: GhosttyScrollbar(total: 100, offset: 10, len: 20),
+            incomingScrollbar: GhosttyScrollbar(total: 105, offset: 15, len: 20)
+        )
+
+        XCTAssertFalse(leaked.isExplicitViewportChange)
+        XCTAssertFalse(leaked.remainingPendingExplicitViewportChange)
+    }
+
+    func testPendingExplicitViewportChangeConsumesWhenViewportActuallyMoves() {
+        let moved = ghosttyConsumeExplicitViewportChange(
+            pendingExplicitViewportChange: true,
+            baselineScrollbar: GhosttyScrollbar(total: 100, offset: 10, len: 20),
+            incomingScrollbar: GhosttyScrollbar(total: 100, offset: 15, len: 20)
+        )
+
+        XCTAssertTrue(moved.isExplicitViewportChange)
+        XCTAssertFalse(moved.remainingPendingExplicitViewportChange)
     }
 
     func testAutomaticFocusRestoreIsSuppressedWhileReviewingScrollback() {
