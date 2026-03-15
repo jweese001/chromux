@@ -58,6 +58,10 @@ final class GhosttyScrollbarSyncPlanTests: XCTestCase {
         )
     }
 
+    func testScrollWheelStartsExplicitViewportChange() {
+        XCTAssertTrue(ghosttyShouldBeginExplicitViewportChange(for: .scrollWheel))
+    }
+
     func testFailedScrollCorrectionDispatchKeepsRetryStateClear() {
         let failed = ghosttyScrollCorrectionDispatchState(
             previousLastSentRow: 4,

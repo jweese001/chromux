@@ -37,6 +37,13 @@ func testInternalScrollCorrectionDoesNotCountAsExplicitViewportChange() {
     )
 }
 
+func testScrollWheelStartsExplicitViewportChange() {
+    expect(
+        ghosttyShouldBeginExplicitViewportChange(for: .scrollWheel),
+        "scroll wheel input should start an explicit viewport change window"
+    )
+}
+
 func testFailedScrollCorrectionDispatchDoesNotBlockRetry() {
     let failed = ghosttyScrollCorrectionDispatchState(
         previousLastSentRow: 4,
@@ -70,6 +77,7 @@ struct GhosttyViewportSyncLogicTestRunner {
     static func main() {
         testPreservesStoredTopVisibleRowWhenNewOutputArrives()
         testInternalScrollCorrectionDoesNotCountAsExplicitViewportChange()
+        testScrollWheelStartsExplicitViewportChange()
         testFailedScrollCorrectionDispatchDoesNotBlockRetry()
         print("PASS: ghostty viewport sync logic")
     }
