@@ -29,6 +29,11 @@ enum GhosttyViewportChangeSource {
     case internalCorrection
 }
 
+enum GhosttyViewportInteraction {
+    case scrollWheel
+    case bindingAction(action: String, source: GhosttyViewportChangeSource)
+}
+
 struct GhosttyScrollCorrectionDispatchState: Equatable {
     let lastSentRow: Int?
     let pendingAnchorCorrectionRow: Int?
@@ -70,6 +75,17 @@ func ghosttyShouldMarkExplicitViewportChange(
 ) -> Bool {
     guard source == .userInteraction else { return false }
     return ghosttyBindingActionMutatesViewport(action)
+}
+
+func ghosttyShouldBeginExplicitViewportChange(
+    for interaction: GhosttyViewportInteraction
+) -> Bool {
+    switch interaction {
+    case .scrollWheel:
+        return true
+    case let .bindingAction(action, source):
+        return ghosttyShouldMarkExplicitViewportChange(action: action, source: source)
+    }
 }
 
 func ghosttyScrollCorrectionDispatchState(

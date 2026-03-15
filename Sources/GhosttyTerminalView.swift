@@ -3413,7 +3413,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
         viewportChangeSource: GhosttyViewportChangeSource = .userInteraction
     ) -> Bool {
         guard let surface = surface else { return false }
-        if ghosttyShouldMarkExplicitViewportChange(action: action, source: viewportChangeSource) {
+        if ghosttyShouldBeginExplicitViewportChange(
+            for: .bindingAction(action: action, source: viewportChangeSource)
+        ) {
             hostedView.markExplicitViewportChange()
         }
         return action.withCString { cString in
@@ -4123,7 +4125,9 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         viewportChangeSource: GhosttyViewportChangeSource = .userInteraction
     ) -> Bool {
         guard let surface = surface else { return false }
-        if ghosttyShouldMarkExplicitViewportChange(action: action, source: viewportChangeSource) {
+        if ghosttyShouldBeginExplicitViewportChange(
+            for: .bindingAction(action: action, source: viewportChangeSource)
+        ) {
             terminalSurface?.hostedView.markExplicitViewportChange()
         }
         return action.withCString { cString in
@@ -5608,6 +5612,9 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     override func scrollWheel(with event: NSEvent) {
         guard let surface = surface else { return }
         lastScrollEventTime = CACurrentMediaTime()
+        if ghosttyShouldBeginExplicitViewportChange(for: .scrollWheel) {
+            terminalSurface?.hostedView.markExplicitViewportChange()
+        }
         Self.focusLog("scrollWheel: surface=\(terminalSurface?.id.uuidString ?? "nil") firstResponder=\(String(describing: window?.firstResponder))")
         var x = event.scrollingDeltaX
         var y = event.scrollingDeltaY
@@ -5860,7 +5867,9 @@ private final class GhosttyScrollView: NSScrollView {
         // Letting NSScrollView consume these events moves the wrapper viewport itself,
         // which causes pane-content drift instead of terminal scrollback movement.
         GhosttyNSView.focusLog("GhosttyScrollView.scrollWheel: surface scroll")
-        surfaceContainer?.markExplicitViewportChange()
+        if ghosttyShouldBeginExplicitViewportChange(for: .scrollWheel) {
+            surfaceContainer?.markExplicitViewportChange()
+        }
         if window?.firstResponder !== surfaceView {
             window?.makeFirstResponder(surfaceView)
         }
