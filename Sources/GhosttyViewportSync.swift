@@ -102,6 +102,10 @@ func ghosttyConsumeExplicitViewportChange(
     )
 }
 
+func ghosttyShouldRestoreAutomaticTerminalFocus(storedTopVisibleRow: Int?) -> Bool {
+    storedTopVisibleRow == nil
+}
+
 func ghosttyScrollCorrectionDispatchState(
     previousLastSentRow: Int?,
     previousPendingAnchorCorrectionRow: Int?,
