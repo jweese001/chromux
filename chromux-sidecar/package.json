@@ -1,0 +1,24 @@
+{
+  "name": "chromux",
+  "version": "0.1.0",
+  "description": "Chromium/CDP bridge sidecar for cmux",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "bin": {
+    "chromux": "./src/chromux.ts"
+  },
+  "scripts": {
+    "dev": "bun run src/chromux.ts",
+    "build": "bun build src/chromux.ts --outdir dist --target bun",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "lint": "echo 'lint: ok (add biome if desired)'"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/bun": "latest"
+  },
+  "dependencies": {
+    "playwright": "^1.58.2"
+  }
+}

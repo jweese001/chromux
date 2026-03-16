@@ -2267,6 +2267,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
 #endif
+
+        // Start chromux sidecar at launch if engine = chromium.
+        // Placed here (didFinishLaunching) rather than didBecomeActive so it fires
+        // even when the app launches in the background (e.g. `open -g`).
+        // The 1 s delay lets the rest of app init settle before we fork a child process.
+        if !isRunningUnderXCTest, BrowserEngineSettings.effectiveMode() == .chromium {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                Task { @MainActor in
+                    guard !ChromuxSidecar.shared.isRunning else { return }
+                    do {
+                        try await ChromuxSidecar.shared.start()
+                    } catch {
+                        dlog("chromux sidecar failed to start: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
     }
 
 #if DEBUG
@@ -2303,6 +2320,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #endif
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        // Retry chromux sidecar start on focus if it failed at launch (e.g. profile was locked).
+        // Primary start happens in applicationDidFinishLaunching; this is a fallback.
+        if BrowserEngineSettings.effectiveMode() == .chromium, !ChromuxSidecar.shared.isRunning {
+            Task {
+                do {
+                    try await ChromuxSidecar.shared.start()
+                } catch {
+                    dlog("chromux sidecar retry failed: \(error.localizedDescription)")
+                }
+            }
+        }
+
         sentryBreadcrumb("app.didBecomeActive", category: "lifecycle", data: [
             "tabCount": tabManager?.tabs.count ?? 0
         ])
@@ -2335,6 +2364,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         _ = saveSessionSnapshot(includeScrollback: true, removeWhenEmpty: false)
         stopSessionAutosaveTimer()
         stopSocketListenerHealthMonitor()
+        // Stop chromux sidecar if it was running (fire-and-forget; process SIGTERM is enough)
+        if BrowserEngineSettings.effectiveMode() == .chromium {
+            Task { await ChromuxSidecar.shared.stop() }
+        }
         TerminalController.shared.stop()
         VSCodeServeWebController.shared.stop()
         BrowserHistoryStore.shared.flushPendingSaves()
@@ -2364,6 +2397,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         prepareStartupSessionSnapshotIfNeeded()
         startSessionAutosaveTimerIfNeeded()
         startSocketListenerHealthMonitorIfNeeded()
+
 #if DEBUG
         setupJumpUnreadUITestIfNeeded()
         setupGotoSplitUITestIfNeeded()

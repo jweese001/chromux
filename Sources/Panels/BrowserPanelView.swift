@@ -203,6 +203,137 @@ func resolvedBrowserOmnibarPillBackgroundColor(
     return themeBackgroundColor.blended(withFraction: darkenMix, of: .black) ?? themeBackgroundColor
 }
 
+// ─── Chromium engine content placeholder ─────────────────────────────────────
+
+/// Shown in the browser content area when the Chromium engine is active.
+/// Chrome runs in its own window/process; this view shows CDP status and usage hints.
+@MainActor
+private struct ChromiumBrowserContentView: View {
+    @ObservedObject var sidecar: ChromuxSidecar = .shared
+
+    var body: some View {
+        ZStack {
+            Color(GhosttyBackgroundTheme.currentColor())
+                .ignoresSafeArea()
+
+            VStack(spacing: 20) {
+                // Icon + status
+                VStack(spacing: 8) {
+                    Image(systemName: statusIcon)
+                        .font(.system(size: 40, weight: .light))
+                        .foregroundColor(statusColor)
+
+                    Text("Chromium Engine")
+                        .font(.title2.weight(.semibold))
+                        .foregroundColor(.primary)
+
+                    Text(statusText)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                // Windowed-mode callout
+                if sidecar.isRunning && !sidecar.isHeadless {
+                    HStack(spacing: 8) {
+                        Image(systemName: "cursorarrow.click.2")
+                            .foregroundColor(.accentColor)
+                        Text("Chrome is running in a separate window. Interact with it directly — the agent sees the same page.")
+                            .font(.caption)
+                            .foregroundColor(.primary.opacity(0.8))
+                            .multilineTextAlignment(.leading)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color.accentColor.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .frame(maxWidth: 420)
+                }
+
+                // Error badge
+                if let err = sidecar.lastError {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text(err)
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                            .lineLimit(3)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.orange.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+
+                // CDP URL chip
+                if let url = sidecar.cdpUrl {
+                    HStack(spacing: 6) {
+                        Image(systemName: "network")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(url)
+                            .font(.caption.monospaced())
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background(Color.secondary.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+
+                Divider().padding(.horizontal, 40)
+
+                // Usage hints
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Control from any cmux terminal:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    hintRow("cmux browser goto https://example.com")
+                    hintRow("cmux browser snapshot")
+                    hintRow("cmux browser screenshot")
+                    hintRow("cmux browser click <selector>")
+                }
+            }
+            .padding(40)
+            .frame(maxWidth: 500)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var statusIcon: String {
+        if !sidecar.isRunning { return "globe.slash" }
+        return sidecar.isHeadless ? "globe" : "macwindow.and.cursorarrow"
+    }
+
+    private var statusColor: Color {
+        sidecar.isRunning ? .green : .secondary
+    }
+
+    private var statusText: String {
+        guard sidecar.isRunning else { return "Chrome sidecar is not running" }
+        let port = sidecar.cdpPort.map(String.init) ?? "–"
+        if sidecar.isHeadless {
+            return "Chrome running headlessly via CDP · port \(port)"
+        } else {
+            return "Chrome running in a visible window · CDP port \(port)"
+        }
+    }
+
+    private func hintRow(_ text: String) -> some View {
+        Text(text)
+            .font(.caption.monospaced())
+            .foregroundColor(.primary.opacity(0.7))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Color.secondary.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+    }
+}
+
 /// View for rendering a browser panel with address bar
 struct BrowserPanelView: View {
     @ObservedObject var panel: BrowserPanel
@@ -328,13 +459,23 @@ struct BrowserPanelView: View {
         return currentPaneId.id == paneId.id
     }
 
+    /// True when the Chromium CDP engine is the active browser backend.
+    private var isChromiumEngineActive: Bool {
+        BrowserEngineSettings.effectiveMode() == .chromium
+    }
+
     var body: some View {
         // Layering contract: browser Cmd+F UI is mounted in the portal-hosted AppKit
         // container. Rendering it here can hide it behind the portal-hosted WKWebView.
         VStack(spacing: 0) {
             addressBar
                 .fixedSize(horizontal: false, vertical: true)
-            webView
+            if isChromiumEngineActive {
+                // Chromium engine: Chrome runs externally via CDP; show status view.
+                ChromiumBrowserContentView()
+            } else {
+                webView
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .overlay {

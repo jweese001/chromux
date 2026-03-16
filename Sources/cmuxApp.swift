@@ -3092,6 +3092,8 @@ struct SettingsView: View {
     private var sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
     @AppStorage("cmuxPortBase") private var cmuxPortBase = 9100
     @AppStorage("cmuxPortRange") private var cmuxPortRange = 10
+    @AppStorage(BrowserEngineSettings.appStorageKey) private var browserEngineMode = BrowserEngineSettings.defaultMode.rawValue
+    @AppStorage(BrowserEngineSettings.headlessKey) private var browserEngineHeadless = BrowserEngineSettings.defaultHeadless
     @AppStorage(BrowserSearchSettings.searchEngineKey) private var browserSearchEngine = BrowserSearchSettings.defaultSearchEngine.rawValue
     @AppStorage(BrowserSearchSettings.searchSuggestionsEnabledKey) private var browserSearchSuggestionsEnabled = BrowserSearchSettings.defaultSearchSuggestionsEnabled
     @AppStorage(BrowserThemeSettings.modeKey) private var browserThemeMode = BrowserThemeSettings.defaultMode.rawValue
@@ -4175,6 +4177,41 @@ struct SettingsView: View {
 
                     SettingsSectionHeader(title: String(localized: "settings.section.browser", defaultValue: "Browser"))
                     SettingsCard {
+                        SettingsPickerRow(
+                            String(localized: "settings.browser.engine", defaultValue: "Browser Engine"),
+                            subtitle: browserEngineMode == BrowserEngineMode.webkit.rawValue
+                                ? String(localized: "settings.browser.engine.subtitleWebKit", defaultValue: "Uses WebKit (default). Fast, native, no extra setup.")
+                                : String(localized: "settings.browser.engine.subtitleChromium", defaultValue: "Uses Chrome via chromux sidecar. Enables full CDP access and Playwright automation. Requires Google Chrome."),
+                            controlWidth: pickerColumnWidth,
+                            selection: $browserEngineMode
+                        ) {
+                            ForEach(BrowserEngineMode.allCases, id: \.rawValue) { mode in
+                                Text(mode == .webkit ? "WebKit (default)" : "Chromium (CDP)").tag(mode.rawValue)
+                            }
+                        }
+
+                        if browserEngineMode == BrowserEngineMode.chromium.rawValue {
+                            SettingsCardDivider()
+                            SettingsCardRow(
+                                String(localized: "settings.browser.engine.headless", defaultValue: "Run Chrome headlessly"),
+                                subtitle: String(localized: "settings.browser.engine.headless.subtitle", defaultValue: "Off: Chrome opens a visible window you can interact with alongside the agent. On: Chrome runs hidden (automation-only).")
+                            ) {
+                                Toggle("", isOn: $browserEngineHeadless)
+                                    .labelsHidden()
+                                    .onChange(of: browserEngineHeadless) { _ in
+                                        // Restart sidecar with new headless preference if running
+                                        if ChromuxSidecar.shared.isRunning {
+                                            Task { @MainActor in
+                                                await ChromuxSidecar.shared.stop()
+                                                try? await ChromuxSidecar.shared.start()
+                                            }
+                                        }
+                                    }
+                            }
+                        }
+
+                        SettingsCardDivider()
+
                         SettingsPickerRow(
                             String(localized: "settings.browser.searchEngine", defaultValue: "Default Search Engine"),
                             subtitle: String(localized: "settings.browser.searchEngine.subtitle", defaultValue: "Used by the browser address bar when input is not a URL."),

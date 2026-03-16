@@ -2239,6 +2239,14 @@ class TerminalController {
             return v2Result(id: id, self.v2DebugScreenshot(params: params))
 #endif
 
+        // ── browser.engine.* → chromux sidecar passthrough ───────────────────
+        // Methods in the browser.engine.* namespace are proxied to the chromux
+        // sidecar (~/sandbox/chromux) which provides full CDP/Chromium access.
+        // If the sidecar is not running, returns a clear not_running error.
+        // See: ~/sandbox/chromux/src/bridge.ts and Sources/ChromuxSidecar.swift
+        case let browserEngineMethod where browserEngineMethod.hasPrefix("browser.engine."):
+            return self.v2ChromuxPassthrough(id: id, method: method, params: params ?? [:])
+
         default:
             return v2Error(id: id, code: "method_not_found", message: "Unknown method")
         }
@@ -5866,6 +5874,99 @@ class TerminalController {
             ?? v2String(params, "sel")
             ?? v2String(params, "element_ref")
             ?? v2String(params, "ref")
+    }
+
+    // ─── chromux sidecar passthrough ─────────────────────────────────────────
+
+    /// Proxy a `browser.engine.*` command to the chromux bridge socket.
+    ///
+    /// This is called on the socket worker thread (not main thread), so blocking
+    /// I/O is safe. We use POSIX sockets directly to avoid any async ceremony —
+    /// the whole call is synchronous from the caller's perspective.
+    ///
+    /// Protocol: send `{id, method, params}\n`, read back one `{id, ok, ...}\n`.
+    /// If the bridge is not running, return a clear `not_running` error.
+    private func v2ChromuxPassthrough(id: Any?, method: String, params: [String: Any]) -> String {
+        let socketPath = "/tmp/chromux-bridge.sock"
+        let timeoutSecs: Double = 8.0
+
+        // ── Build the outgoing request line ───────────────────────────────────
+        var request: [String: Any] = ["method": method, "params": params]
+        if let id { request["id"] = id }
+        guard JSONSerialization.isValidJSONObject(request),
+              let requestData = try? JSONSerialization.data(withJSONObject: request),
+              var requestLine = String(data: requestData, encoding: .utf8) else {
+            return v2Error(id: id, code: "encode_error", message: "Failed to encode browser.engine request")
+        }
+        requestLine += "\n"
+
+        // ── Connect to bridge socket ──────────────────────────────────────────
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else {
+            return v2Error(id: id, code: "not_running",
+                           message: "chromux is not running (could not create socket)")
+        }
+        defer { close(fd) }
+
+        // Set send/receive timeouts
+        var tv = timeval(tv_sec: Int(timeoutSecs), tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let pathBytes = Array(socketPath.utf8)
+        withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
+            ptr.withMemoryRebound(to: UInt8.self, capacity: pathBytes.count + 1) { cStr in
+                for (i, byte) in pathBytes.enumerated() { cStr[i] = byte }
+                cStr[pathBytes.count] = 0
+            }
+        }
+
+        let connectResult = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+
+        guard connectResult == 0 else {
+            return v2Error(id: id, code: "not_running",
+                           message: "chromux bridge is not running. Start it with: chromux start")
+        }
+
+        // ── Send request ──────────────────────────────────────────────────────
+        let sent = requestLine.withCString { ptr in
+            send(fd, ptr, strlen(ptr), 0)
+        }
+        guard sent > 0 else {
+            return v2Error(id: id, code: "send_error", message: "Failed to send request to chromux bridge")
+        }
+
+        // ── Read response (line-delimited) ────────────────────────────────────
+        var responseBuffer = Data()
+        responseBuffer.reserveCapacity(4096)
+        var chunk = [UInt8](repeating: 0, count: 4096)
+
+        while !responseBuffer.contains(UInt8(ascii: "\n")) {
+            let n = recv(fd, &chunk, chunk.count, 0)
+            if n <= 0 { break }
+            responseBuffer.append(contentsOf: chunk[0..<n])
+        }
+
+        guard let newlineIdx = responseBuffer.firstIndex(of: UInt8(ascii: "\n")),
+              let responseStr = String(data: responseBuffer[..<newlineIdx], encoding: .utf8) else {
+            return v2Error(id: id, code: "no_response", message: "No response from chromux bridge (timeout or connection closed)")
+        }
+
+        // ── Validate and relay the JSON response ──────────────────────────────
+        guard let responseJSON = try? JSONSerialization.jsonObject(with: Data(responseStr.utf8)) as? [String: Any] else {
+            return v2Error(id: id, code: "parse_error", message: "Invalid JSON from chromux bridge: \(responseStr.prefix(200))")
+        }
+
+        // Re-stamp with the caller's original id (bridge may use a different one internally)
+        var out = responseJSON
+        out["id"] = id ?? NSNull()
+        return v2Encode(out)
     }
 
     private func v2BrowserNotSupported(_ method: String, details: String) -> V2CallResult {
