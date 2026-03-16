@@ -1,3 +1,114 @@
+# chromux
+
+> **Fork of [manaflow-ai/cmux](https://github.com/manaflow-ai/cmux)** that adds a full Chromium/CDP browser engine — enabling shared human+agent browser sessions, Playwright/Puppeteer automation, and complete Chrome DevTools Protocol access from any cmux terminal.
+
+## What's different in this fork
+
+- **Chromium engine** — Chrome runs as a sidecar alongside cmux, controlled via CDP. You interact with the same Chrome window the agent does.
+- **75+ `browser.engine.*` socket commands** — navigate, click, fill, find, screenshot, tabs, storage, cookies, network interception, script injection, and more.
+- **Playwright / Puppeteer compatible** — connect directly to the live Chrome instance via the CDP port.
+- **Windowed or headless** — visible Chrome window by default (shared session); toggle to headless for pure automation.
+- **Additive** — the default WebKit engine is completely unchanged. Chromium is opt-in.
+
+## Install (from source)
+
+### Prerequisites
+
+| Dependency | Install |
+|---|---|
+| Xcode 15+ | Mac App Store |
+| Google Chrome | [google.com/chrome](https://www.google.com/chrome/) |
+| Bun runtime | `curl -fsSL https://bun.sh/install \| bash` |
+| Zig (for GhosttyKit) | `brew install zig` |
+| Metal Toolchain | Included with Xcode |
+
+### Steps
+
+```sh
+# 1. Clone
+git clone https://github.com/jweese001/chromux.git
+cd chromux
+
+# 2. Initialize submodules (GhosttyKit)
+git submodule update --init --recursive
+
+# 3. Build GhosttyKit (required once; cached after)
+cd ghostty
+zig build -Demit-xcframework=true -Dxcframework-target=native -Doptimize=ReleaseFast
+cd ..
+
+# 4. Build and launch
+./scripts/reload.sh --tag chromux-a
+```
+
+The debug app launches automatically. To persist the Chromium engine:
+
+```sh
+defaults write com.cmuxterm.app.debug.chromux.a browserEngineMode chromium
+```
+
+### Enable Chromium engine
+
+After launch, go to **Settings → Browser → Browser Engine → Chromium CDP**.
+
+Or via the terminal:
+```sh
+defaults write com.cmuxterm.app.debug.chromux.a browserEngineMode chromium
+```
+
+### Verify it's working
+
+```sh
+# Should show running=true and a CDP port
+echo '{"v":2,"id":1,"method":"browser.engine.status","params":{}}' \
+  | nc -U /tmp/cmux-debug-chromux-a.sock -w 5
+```
+
+## Usage
+
+```sh
+cmux browser goto https://example.com
+cmux browser snapshot
+cmux browser screenshot
+cmux browser click "button[type=submit]"
+cmux browser fill "#search" "hello world"
+cmux browser find text "Sign in"
+cmux browser tab new https://github.com
+```
+
+Full API reference: [`docs/chromium-engine.md`](docs/chromium-engine.md)
+
+## Playwright / Puppeteer
+
+```js
+const { chromium } = require('playwright');
+const state = JSON.parse(require('fs').readFileSync('/tmp/chromux-state.json', 'utf8'));
+const browser = await chromium.connectOverCDP(`http://127.0.0.1:${state.cdpPort}`);
+const page = await browser.contexts()[0].pages()[0];
+```
+
+> Use Node.js (`.mjs`), not Bun — Playwright's WebSocket client has a known Bun incompatibility.
+
+## Dev workflow
+
+```sh
+# Build + launch
+./scripts/reload.sh --tag chromux-a
+
+# Sidecar log
+tail -f /tmp/cmux-debug-chromux-a.log
+
+# Run sidecar tests (131 passing)
+cd ~/sandbox/chromux && bun test
+
+# Sync sidecar dev tree → bundled copy
+rsync -av --exclude 'node_modules' --exclude 'tests' --exclude '.git' \
+  ~/sandbox/chromux/src/ chromux-sidecar/src/
+cp ~/sandbox/chromux/package.json ~/sandbox/chromux/bun.lock chromux-sidecar/
+```
+
+---
+
 <h1 align="center">cmux</h1>
 <p align="center">A Ghostty-based macOS terminal with vertical tabs and notifications for AI coding agents</p>
 
