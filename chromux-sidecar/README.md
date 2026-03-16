@@ -72,9 +72,9 @@ The canonical dev tree is `~/sandbox/chromux/` — run tests there. This directo
 
 ```sh
 rsync -av --exclude 'node_modules' --exclude 'tests' --exclude '.git' \
-  ~/sandbox/chromux/src/ ~/Documents/Git/cmux/chromux-sidecar/src/
+  ~/sandbox/chromux/src/ ~/Documents/Git/chromux/chromux-sidecar/src/
 cp ~/sandbox/chromux/package.json ~/sandbox/chromux/bun.lock \
-   ~/Documents/Git/cmux/chromux-sidecar/
+   ~/Documents/Git/chromux/chromux-sidecar/
 ```
 
 ### Run tests (from dev tree)
@@ -88,6 +88,6 @@ node tests/playwright-compat.mjs  # Playwright compat (Node.js required, not Bun
 ### Build app
 
 ```sh
-cd ~/Documents/Git/cmux
+cd ~/Documents/Git/chromux
 ./scripts/reload.sh --tag chromux-a
 ```
